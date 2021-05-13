@@ -15,7 +15,7 @@
 #
 
 # 1st stage, build the app
-FROM maven:3.5.4-jdk-9 as build
+FROM maven:3.8.1-jdk-11 as build
 
 WORKDIR /helidon
 
@@ -28,11 +28,11 @@ RUN mkdir -p /helidon/target/classes && mvn package -DskipTests
 # Do the Maven build!
 # Incremental docker builds will resume here when you change sources
 ADD src src
-RUN mvn package -DskipTests
+RUN cd 
 RUN echo "done!"
 
 # 2nd stage, build the runtime image
-FROM openjdk:8-jre-slim
+FROM openjdk:11-jre-slim
 WORKDIR /helidon
 
 # Copy the binary built in the 1st stage
