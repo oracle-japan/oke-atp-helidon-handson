@@ -28,7 +28,7 @@ RUN mkdir -p /helidon/target/classes && mvn package -DskipTests
 # Do the Maven build!
 # Incremental docker builds will resume here when you change sources
 ADD src src
-RUN cd 
+RUN mvn package -DskipTests
 RUN echo "done!"
 
 # 2nd stage, build the runtime image
