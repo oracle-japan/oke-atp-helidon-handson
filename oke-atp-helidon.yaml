@@ -37,12 +37,12 @@ spec:
         ports:
         - containerPort: 8080
         env:
-        - name: javax_sql_DataSource_workshopDataSource_dataSource_user
+        - name: javax.sql.DataSource.workshopDataSource.dataSource.user
           valueFrom:
             secretKeyRef:
               name: customized-db-cred
               key: user_name
-        - name: javax_sql_DataSource_workshopDataSource_dataSource_password
+        - name: javax.sql.DataSource.workshopDataSource.dataSource.password
           valueFrom:
             secretKeyRef:
               name: customized-db-cred
@@ -54,4 +54,3 @@ spec:
       - name: handson
         configMap:
           name: okeatp
----
