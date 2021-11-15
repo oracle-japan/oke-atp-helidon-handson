@@ -32,7 +32,7 @@ spec:
       # can read them and use it for connecting to ATP.
       containers:
       - name: oke-atp-helidon
-        image: iad.ocir.io/orasejapan/workshop/okeatpapp:latest
+        image: iad.ocir.io/orasejapan/handson:${BUILDRUN_HASH}
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
