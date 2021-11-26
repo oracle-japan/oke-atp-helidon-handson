@@ -1,7 +1,7 @@
 apiVersion: oci.oracle.com/v1beta1
 kind: AutonomousDatabases
 metadata:
-  name: oke-atp-handson
+  name: oke-atp-handson-db
 spec:
   compartmentId: <ご自身のコンパートメントOCID>
   displayName: oke-atp-handson-db
