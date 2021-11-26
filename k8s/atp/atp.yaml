@@ -5,7 +5,7 @@ metadata:
 spec:
   compartmentId: <ご自身のコンパートメントOCID>
   displayName: oke-atp-handson-db
-  dbName: oke-atp-handson-db
+  dbName: okeatp
   dbWorkload: OLTP
   isDedicated: false
   dbVersion: 19c
