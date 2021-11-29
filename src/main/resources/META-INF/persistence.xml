@@ -13,6 +13,7 @@
       <property name="eclipselink.logging.logger" value="JavaLogger"/>
       <property name="eclipselink.logging.parameters" value="true"/>
       <property name="eclipselink.target-database" value="Oracle"/> 
+      <property name="eclipselink.target-server" value="io.helidon.integrations.cdi.eclipselink.CDISEPlatform"/>
       <property name="eclipselink.weaving" value="false"/>
     </properties>
   </persistence-unit>
