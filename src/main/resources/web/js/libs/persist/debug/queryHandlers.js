@@ -6,14 +6,58 @@
 define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils', './impl/logger', './impl/sql-where-parser.min'],
   function (persistenceManager, persistenceStoreManager, persistenceUtils, logger, sqlWhereParser) {
     'use strict';
-  
+
+    /**
+     * @export
+     * @interface NormalizedQuery
+     * @classdesc Interface for normalized query structure. Various REST endpoints support
+     *            different syntax for querying resources. Normalizing the query syntax
+     *            enables Oracle Persistence Toolkit to perform certain functionalities
+     *            including client side shredded data cleanup.
+     * @hideconstructor
+     */
+
+     /**
+      * The offset to be requested from the current query.
+      *
+      * @export
+      * @expose
+      * @memberof NormalizedQuery
+      * @instance
+      * @name offset
+      * @type {int}
+      */
+
+      /**
+       * The number of rows to be requested from the current query. Can be -1 or
+       * any integer. -1 indicates no limit.
+       *
+       * @export
+       * @expose
+       * @memberof NormalizedQuery
+       * @instance
+       * @name limit
+       * @type {number}
+       */
+
+       /**
+        * The search criteria to be included in the current query.
+        *
+        * @export
+        * @expose
+        * @memberof NormalizedQuery
+        * @instance
+        * @name searchCriteria
+        * @type {object}
+        */
+
     /**
      * @class queryHandlers
      * @classdesc Contains out of the box query handlers.
      * @export
      * @hideconstructor
      */
-    
+
     /**
      * Returns the Oracle Rest Query Handler which handles the query parameters
      * according to the Oracle Rest Specification. Note the Oracle Rest Specification
@@ -23,7 +67,7 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
      * value and returns a persistence store query. If none if provided then the
      * default is to use the ADFBc REST query parameter structure which has the form:
      * ?q=EmpId=100. Offline supports the following ADFBc operators in the expression:
-     * >, <, >=, <=, =, !=, AND, OR, LIKE. 
+     * >, <, >=, <=, =, !=, AND, OR, LIKE, IN.
      * In addition, the query handler supports the limit and offset query parameters
      * used for paging in the Oracle REST specification.
      * @method
@@ -34,54 +78,72 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
      * @param {function=} createQueryExp Optional function takes URL query parameters
      * and returns a query expression which will be executed against the persistent store.
      * If null then use the ADFBc REST query parameter structure.
-     * @param {DataMapping=} dataMapping Optional dataMapping to apply to the data 
+     * @param {DataMapping=} dataMapping Optional dataMapping to apply to the data
      * @return {Function} Returns the query handler
      */
     function getOracleRestQueryHandler(storeName, createQueryExp, dataMapping) {
       createQueryExp = createQueryExp || function (urlParams) {
         return _createQueryFromAdfBcParams(urlParams, null);
       }
-      return function (request, options) {
+      var sortQuery;
+      // normalize the query parameters into format:
+      // offset: integer
+      // limit: integer
+      // searchCriteria:
+      var normalizeOracleRestQueryParameter = function (requestUrl) {
+        var limit = -1;
+        var offset = 0;
+        var searchCriteria;
+        var urlParams = requestUrl.split('?');
+        var queryParamsIter;
+        var queryParamEntry;
+        var queryParamName;
+        var queryParamValue;
+        sortQuery = [];
+        if (typeof URLSearchParams === 'undefined') {
+          // IE does not support URLSearchParams so parse
+          // it ourselves
+          queryParamsIter = _parseURLSearchParams(urlParams[1]);
+        } else {
+          queryParamsIter = (new URLSearchParams(urlParams[1])).entries();
+        }
+        do {
+          queryParamEntry = queryParamsIter.next();
+
+          if (queryParamEntry['value'] != null) {
+            queryParamName = queryParamEntry['value'][0];
+            queryParamValue = queryParamEntry['value'][1];
+
+            if (queryParamName == 'q') {
+              searchCriteria = queryParamValue;
+            } else if (queryParamName == 'limit') {
+              limit = parseInt(queryParamValue, 10);
+            } else if (queryParamName == 'offset') {
+              offset = parseInt(queryParamValue, 10);
+            } else if(queryParamName.toLowerCase() === 'orderby' && !sortQuery.length) {
+              var sortQueryValues = queryParamValue.split(',');
+              sortQueryValues.forEach(function(sortQueryValue) {
+                var sortValue = sortQueryValue.split(':');
+                var _sortQueryItem = {};
+                _sortQueryItem["value." + sortValue[0]] = sortValue[1] ? sortValue[1] : 'asc' ;
+                sortQuery.push(_sortQueryItem);
+              })
+            }
+          }
+        } while (!queryParamEntry['done']);
+        return {
+          offset: offset,
+          limit: limit,
+          searchCriteria: searchCriteria
+        }
+      };
+      var queryHandler = function (request, options) {
         if (request.method == 'GET' ||
           request.method == 'HEAD') {
           logger.log("Offline Persistence Toolkit queryHandlers: OracleRestQueryHandler processing request");
-          var urlParams = request.url.split('?');
-          var findQuery = {};
-          var queryParams;
-          var queryParamsIter;
+          var normalized = normalizeOracleRestQueryParameter(request.url);
 
-          if (typeof URLSearchParams === 'undefined') {
-            // IE does not support URLSearchParams so parse
-            // it ourselves
-            queryParamsIter = _parseURLSearchParams(urlParams[1]);
-          } else {
-            queryParamsIter = (new URLSearchParams(urlParams[1])).entries();
-          }
-
-          var queryParamEntry;
-          var queryParamName;
-          var queryParamValue;
-          var limit;
-          var offset;
-
-          do {
-            queryParamEntry = queryParamsIter.next();
-
-            if (queryParamEntry['value'] != null) {
-              queryParamName = queryParamEntry['value'][0];
-              queryParamValue = queryParamEntry['value'][1];
-
-              if (queryParamName == 'q') {
-                queryParams = queryParamValue;
-              } else if (queryParamName == 'limit') {
-                limit = queryParamValue;
-              } else if (queryParamName == 'offset') {
-                offset = queryParamValue;
-              }
-            }
-          } while (!queryParamEntry['done']);
-
-          var findQuery = persistenceUtils._mapFindQuery(createQueryExp(queryParams), dataMapping);
+          var findQuery = persistenceUtils._mapFindQuery(createQueryExp(normalized.searchCriteria), dataMapping, sortQuery);
 
           var shredder;
           var unshredder;
@@ -90,12 +152,11 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
             shredder = options['jsonProcessor']['shredder'];
             unshredder = options['jsonProcessor']['unshredder'];
           }
-
           if (shredder != null &&
             unshredder != null) {
-            return _processQuery(request, storeName, findQuery, shredder, unshredder, offset, limit).then(function(response) {
+            return _processQuery(request, storeName, findQuery, shredder, unshredder, normalized.offset, normalized.limit).then(function(response) {
               if (!response) {
-                return Promise.resolve();
+                return;
               }
               var responseClone = response.clone();
               return responseClone.text().then(function (payload) {
@@ -106,10 +167,10 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
                     if (!payloadJson.links) {
                       payloadJson.links = [{rel: 'self', href: request.url}];
                       return persistenceUtils.setResponsePayload(response, payloadJson).then(function (response) {
-                        return Promise.resolve(response);
+                        return response;
                       });
                     } else {
-                      return Promise.resolve(response);
+                      return response;
                     }
                   } catch (err) {
                   }
@@ -120,79 +181,66 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
         }
         return Promise.resolve();
       };
+      queryHandler.normalizeQueryParameter = normalizeOracleRestQueryParameter;
+
+      return queryHandler;
     };
-    
+
+    // 1. get the matched raw entry from cache store: it should contain key, and
+    //    response header.
+    // 2. if we found a match:
+    //       for single resource type, we'll just get it from cache, by using cache key.
+    //       for collection resource type, we'll need to query the store, and
+    //       construct the response.
+    // 3. if we don't find a match
+    //       get the possible id from the url, and search store on that key.
+    //       if we no possible id, or no entry found with that key, we don't have a match
+    //       if we found an object from the store, then we need to construct a response.
+    //
     function _processQuery(request, storeName, findQuery, shredder, unshredder, offset, limit) {
-      // first check of we have a collection query or single row query
-      // collection query will always return true for cache.hasMatch()
-      // single row query will return hasMatch true if that query
-      // was executed before, if not we have to query for it
-      return persistenceManager.getCache().hasMatch(request, {ignoreSearch: true}).then(function (hasMatch) {
-        return persistenceStoreManager.openStore(storeName).then(function (store) {
-          if (hasMatch) {
-            // check if it's a single row query. If so then we don't need to
-            // do a find.
-            return persistenceManager.getCache().match(request, {ignoreSearch: true}).then(function (response) {
-              if (response.headers.get('x-oracle-jscpt-resource-type') === 'single') {
-                return Promise.resolve();
-              } else {
-                // query in the shredded data
-                return store.find(findQuery);
-              }
-            });
+      return persistenceManager.getCache()._internalMatch(request, {ignoreSearch: true, ignoreBody: true}).then(function (cacheEntryMetadata) {
+        if (cacheEntryMetadata) {
+          if (cacheEntryMetadata.resourceType === 'unknown') {
+            return null;
+          } else if (cacheEntryMetadata.resourceType === 'single') {
+            // just get the response based on key.
+            return persistenceManager.getCache()._matchByKey(request, cacheEntryMetadata.key);
           } else {
-            // this might be a single row query so we need to parse the URL for an id based query
-            var id = _getRequestUrlId(request);
-            if (id) {
-              return store.findByKey(id);
-            }
-            return Promise.resolve([]);
-          }
-        }).then(function (results) {
-          return persistenceManager.getCache().match(request, {ignoreSearch: true}).then(function (response) {
-            if (response) {
+            // we have collection type of response
+            // 1. first query from the shredded store.
+            // 2. apply offset and limit.
+            // 3. reconstruct the response
+            return persistenceStoreManager.openStore(storeName).then(function(store) {
+              return store.find(findQuery);
+            }).then(function(results) {
               var hasMore = false;
-              var totalResults = 0;
-              if (results) {
-                totalResults = results.length;
-                if (offset
-                  && offset > 0) {
-                  if (offset < results.length)
-                  {
-                    hasMore = true;
-                  }
-                  else
-                  {
-                    hasMore = false;
-                  }
-                  results = results.slice(offset, results.length);
+              var totalResults = results.length;
+              if (offset && offset > 0) {
+                if (offset < totalResults) {
+                  results = results.slice(offset);
+                } else {
+                  results = [];
                 }
-                if (limit
-                  && limit > 0) {
-                  if (limit <= results.length)
-                  {
-                    hasMore = true;
-                  }
-                  else
-                  {
-                    hasMore = false;
-                  }
+              }
+              if (limit && limit > 0 && results.length > 0) {
+                if (limit < results.length) {
+                  hasMore = true;
                   results = results.slice(0, limit);
                 }
               }
-              return shredder(response).then(function (dataArray) {
-                var resourceType = dataArray[0].resourceType;
-                var transformedResults = {
-                  name: storeName,
-                  data: results != null ? results : dataArray[0].data,
-                  resourceType: resourceType
-                };
-                return unshredder([transformedResults], response).then(function (response) {
-                  // add limit and offset
-                  var responseClone = response.clone();
-                  return responseClone.text().then(function (payload) {
-                    if (payload != null &&
-                      payload.length > 0) {
+              var newShreddedData = {
+                name: storeName,
+                data: results,
+                resourceType: 'collection'
+              };
+              return persistenceManager.getCache()._matchByKey(
+                request, cacheEntryMetadata.key, {ignoreBody: true}
+              ).then(function(response) {
+                return unshredder([newShreddedData], response).then(function(newResponse) {
+                  // add limit and offset to the newly constructed response.
+                  var responseClone = newResponse.clone();
+                  return responseClone.text().then(function(payload) {
+                    if (payload != null && payload.length > 0) {
                       try {
                         var payloadJson = JSON.parse(payload);
                         if (payloadJson.items != null) {
@@ -204,51 +252,85 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
                           }
                           payloadJson.hasMore = hasMore;
                           payloadJson.totalResults = totalResults;
+                          return persistenceUtils.setResponsePayload(response, payloadJson);
+                        } else {
+                          return newResponse;
                         }
-                        return persistenceUtils.setResponsePayload(response, payloadJson);
                       } catch (err) {
+                        logger.log("JSON parse error on payload: " + payload);
                       }
                     } else {
-                      return response;
+                      return newResponse;
                     }
                   });
                 });
               });
-            } else if (results && Object.keys(results).length > 0) {
-              // this means have a single query result
-              var collectionUrl = _getRequestCollectionUrl(request);
-              if (collectionUrl) {
-                return persistenceUtils.requestToJSON(request).then(function (requestObj) {
-                  requestObj.url = collectionUrl;
-                  return persistenceUtils.requestFromJSON(requestObj).then(function (collectionRequest) {
-                    return persistenceManager.getCache().match(collectionRequest, {ignoreSearch: true}).then(function (response) {
-                      if (response) {
-                        var transformedResults = {
-                          name: storeName,
-                          data: [results],
-                          resourceType: 'single'
-                        };
-                        return unshredder([transformedResults], response);
-                      }
+            })
+          }
+        } else {
+          // no matched response from cache, could be
+          // 1. this is a single row query, we'll try finding that row in the
+          //    shredded store.
+          // 2. there is just no cached response for this request at all.
+          var id = _getRequestUrlId(request);
+          if (!id) {
+            // there is just no cached response for this request.
+            return;
+          } else {
+            // check if we have shredded data for this id.
+            return persistenceStoreManager.openStore(storeName).then(function (store) {
+              return store.findByKey(id);
+            }).then(function(result) {
+              if (result) {
+                // we have an entry in the shredded store, so we can contruct
+                // a valid response by using the cached collection response shell
+                // with the single shredded data as payload.
+                var collectionUrl = _getRequestCollectionUrl(request);
+                if (collectionUrl) {
+                  return persistenceUtils.requestToJSON(request).then(function (requestObj) {
+                    requestObj.url = collectionUrl;
+                    return persistenceUtils.requestFromJSON(requestObj).then(function (collectionRequest) {
+                      return persistenceManager.getCache().match(collectionRequest, {ignoreSearch: true, ignoreBody: true}).then(function (response) {
+                        if (response) {
+                          var transformedResults = {
+                            name: storeName,
+                            data: [result],
+                            resourceType: 'single'
+                          };
+                          return unshredder([transformedResults], response);
+                        }
+                      });
                     });
                   });
-                });
+                } else {
+                  // should never come here since we are able to get id from
+                  // the url, we should be able to get the colletion URL.
+                  return;
+                }
               } else {
-                return Promise.resolve();
+                // nothing in the shredded store, we don't have anything to return
+                // a valid response.
+                return;
               }
-            } else {
-              return Promise.resolve();
-            }
-          });
-        });
+            });
+          }
+        }
       });
     };
-    
+
     function _createQueryFromAdfBcParams(value) {
       var findQuery = {};
 
       if (value) {
-        var parser = new sqlWhereParser();
+        // link to 3rd party API : https://www.npmjs.com/package/sql-where-parser
+        // By default sql-where-parser does not support the <> operator.
+        var config = sqlWhereParser.defaultConfig;
+        // adding the '<>' operator into the config list
+        config.operators[5]['<>'] = 2;
+        config.tokenizer.shouldTokenize.push('<>');
+        // creating a new sqlWhereParser with the config settings we just created
+        var parser = new sqlWhereParser(config);
+
         var queryExpArray = value.split(';');
         var i;
         var selectorQuery = {};
@@ -256,13 +338,14 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
         var selectorQueryItem = {};
 
         for (i = 0; i < queryExpArray.length; i++) {
-          
+
           selectorQueryItem = parser.parse(queryExpArray[i], function(operatorValue, operands)
             {
               operatorValue = operatorValue.toUpperCase();
               // the LHS operand is always a value operand
               if (operatorValue != 'AND' &&
-                operatorValue != 'OR') {
+                operatorValue != 'OR' &&
+                operatorValue != ',') {
                 operands[0] = 'value.' + operands[0];
               }
               var lhsOp = operands[0];
@@ -310,9 +393,9 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
                   };
                   break;
                 case 'LIKE':
-                  rhsOp = rhsOp.replace('%', '.+');
+                  rhsOp = rhsOp.replace(/%/g, '.*');
                   returnExp[lhsOp] = {
-                    $regex: rhsOp
+                    $regex: RegExp(rhsOp,'i')
                   };
                   break;
                 case 'BETWEEN':
@@ -325,6 +408,41 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
                     $and: betweenOperands
                   };
                   break;
+                case '<>':
+                  returnExp[lhsOp] = {
+                    $ne: rhsOp
+                  };
+                  break;
+                case 'IS':
+                  // Checks if the rhsOp is null before constucting null case
+                  // this is to avoid mishandling 'IS NOT NULL' cases
+                  if (rhsOp === null){
+                    var nullOperand = [];
+                    nullOperand[0] = {};
+                    nullOperand[1] = {};
+                    // Rows with non-existing columns return 'undefined' instead of null in JS.
+                    // Checking both 'null' and 'undefined' since both are valid for a 'IS NULL' query
+                    nullOperand[0][lhsOp] = {$eq: null};
+                    nullOperand[1][lhsOp] = {$eq: undefined};
+                    // The 'or' statement is used to check for both null and undefined
+                    returnExp = {
+                      $or : nullOperand
+                    }
+                  }
+                  break;
+                case 'IN':
+                  returnExp[lhsOp] = {
+                    $in: [].concat(rhsOp)
+                  };
+                  break;
+                case ',':
+                  // the ',' case is due to how sql-where-parser handles comma seperated values
+                  // The returned value is used in the next operation
+                  // Example 'Location IN (1,2,3)', using the ',' case logic:
+                  // operatorValue : IN | operands : [ 'location', [3,2,1] ]
+                  // Without the ',' case logic :
+                  // operatorValue : IN | operands : [ 'location', {} ]
+                  return [rhsOp].concat(lhsOp);
               }
               return returnExp;
             });
@@ -341,7 +459,7 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
         }
       return findQuery;
     };
-  
+
     /**
      * Returns the Simple Query Handler which matches the URL query parameter/value pairs
      * against the store's field/value pairs.
@@ -355,15 +473,27 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
      * @return {Function} Returns the query handler
      */
     function getSimpleQueryHandler(storeName, ignoreUrlParams, dataMapping) {
-      return function (request, options) {
+      var normalizeSimpleQueryParameter = function (requestUrl) {
+        var searchCriteria;
+        var urlParams = requestUrl.split('?');
+        if (urlParams.length > 1) {
+          searchCriteria = urlParams[1];
+        }
+        return {
+          offset: 0,
+          limit: -1,
+          searchCriteria: searchCriteria
+        }
+      };
+      var queryHandler = function (request, options) {
         if (request.method == 'GET' ||
           request.method == 'HEAD') {
           logger.log("Offline Persistence Toolkit queryHandlers: SimpleQueryHandler processing request");
           // applies to all GET requests. If there are any URL query params
           // then the keys in the parameter are directly mapped to the shredded
           // data fields and values to the shredded data values
-          var urlParams = request.url.split('?');
-          var findQuery = persistenceUtils._mapFindQuery(_createQueryFromUrlParams(urlParams, ignoreUrlParams), dataMapping);
+          var normalized = normalizeSimpleQueryParameter(request.url);
+          var findQuery = persistenceUtils._mapFindQuery(_createQueryFromUrlParams(normalized.searchCriteria, ignoreUrlParams), dataMapping);
 
           var shredder;
           var unshredder;
@@ -380,22 +510,23 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
         }
         return Promise.resolve();
       };
+      queryHandler.normalizeQueryParameter = normalizeSimpleQueryParameter;
+      return queryHandler;
     };
-    
-    function _createQueryFromUrlParams(urlParams, ignoreUrlParams) {
+
+    function _createQueryFromUrlParams(searchParams, ignoreUrlParams) {
       var findQuery = {};
-      
-      if (urlParams &&
-        urlParams.length > 1) {
+
+      if (searchParams) {
         var selectorQuery = {};
         var queryParamsIter;
 
         if (typeof URLSearchParams === 'undefined') {
           // IE does not support URLSearchParams so parse
           // it ourselves
-          queryParamsIter = _parseURLSearchParams(urlParams[1]);
+          queryParamsIter = _parseURLSearchParams(searchParams);
         } else {
-          queryParamsIter = (new URLSearchParams(urlParams[1])).entries();
+          queryParamsIter = (new URLSearchParams(searchParams)).entries();
         }
 
         var queryParamEntry;
@@ -464,11 +595,32 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
 
       return iterator;
     };
-    
+
+    // add more search criteria to the query.
+    function _addSearchCriteria(
+      query, // the existing query to be updated
+      name,  // the name to search against
+      value // the value to use to search against the name
+    ) {
+      var additionalSelector = {};
+      additionalSelector[name] = {'$eq': value};
+      var selector = query.selector;
+      if (!selector) {
+        query.selector = additionalSelector;
+      } else {
+        var combined = [];
+        combined.push(selector);
+        combined.push(additionalSelector);
+        query.selector = {
+          '$and': combined
+        };
+      }
+    }
+
     function _cleanURIValue(value) {
       return decodeURIComponent(value.replace(/\+/g, ' '));
     };
-    
+
     function _getRequestUrlId(request) {
       var urlTokens = request.url.split('/');
       if (urlTokens.length > 1) {
@@ -476,7 +628,7 @@ define(['./persistenceManager', './persistenceStoreManager', './persistenceUtils
       }
       return null;
     };
-    
+
     function _getRequestCollectionUrl(request) {
       var urlTokens = request.url.split('/');
       if (urlTokens.length > 1) {

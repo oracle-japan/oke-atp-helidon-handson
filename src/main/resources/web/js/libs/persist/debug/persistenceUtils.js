@@ -28,6 +28,39 @@ define(['./impl/logger'], function (logger) {
   };
 
   /**
+   * Return whether the Request is initiated from sync operation.
+   * @method
+   * @name isReplayRequest
+   * @memberof persistenceUtils
+   * @static
+   * @private
+   * @param {Request} request Request object
+   * @return {boolean} Returns whether it's a request initiated from sync operation.
+   */
+  function isReplayRequest(request) {
+    return request.headers.has('x-oracle-jscpt-sync-replay');
+  };
+
+  /**
+   * Mark the request as initiated from sync operation
+   * @method
+   * @name markReplayRequest
+   * @memberof persistenceUtils
+   * @static
+   * @private
+   * @param {Request} request Request object
+   * @param {boolean} replay a flag indicating whether it is a request from syn
+   *                         operation or not.
+   */
+  function markReplayRequest(request, replay) {
+    if (replay) {
+      request.headers.set('x-oracle-jscpt-sync-replay', '');
+    } else {
+      request.headers.delete('x-oracle-jscpt-sync-replay');
+    }
+  };
+
+  /**
    * Return whether the Response has a generated ETag
    * @method
    * @name isGeneratedEtagResponse
@@ -43,7 +76,8 @@ define(['./impl/logger'], function (logger) {
   function _derivePayloadType(xhr, response) {
     var contentType = response.headers.get('Content-Type');
     var responseType = xhr.responseType;
-    if (_isTextPayload(response.headers)) {
+    var isSVG = contentType && contentType.indexOf('image/svg+xml') !== -1;
+    if (_isTextPayload(response.headers) || isSVG) {
       return "text";
     } else if (isCachedResponse(response) || responseType === 'blob') {
       return "blob";
@@ -63,8 +97,7 @@ define(['./impl/logger'], function (logger) {
     // the response is considered text type when contentType value is of
     // pattern text/ or application/*json .
     if (contentType &&
-        (contentType.match(/.*text\/.*/) ||
-         contentType.match(/.*application\/.*json.*/))) {
+        (contentType.match(/.*text\/.*/))) {
       return true;
     }
     return false;
@@ -263,12 +296,15 @@ define(['./impl/logger'], function (logger) {
    */
   function requestFromJSON(data) {
     logger.log("Offline Persistence Toolkit persistenceUtils: requestFromJSON()");
+    if (!data){
+      return Promise.resolve();
+    }
     var initFromData = {};
     _copyProperties(data, initFromData, ['headers', 'body', 'signal']);
     var skipContentType = _copyPayloadFromJsonObj(data, initFromData);
     initFromData.headers = _createHeadersFromJsonObj(data, skipContentType);
 
-    return _createRequestFromJsonObj(data, initFromData);
+    return Promise.resolve(new Request(data.url, initFromData));
   };
 
   function _copyPayloadFromJsonObj(data, targetObj) {
@@ -304,10 +340,6 @@ define(['./impl/logger'], function (logger) {
     return headers;
   };
 
-  function _createRequestFromJsonObj(data, initFromData) {
-    return Promise.resolve(new Request(data.url, initFromData));
-  };
-
   /**
    * Return a Response object constructed from the JSON object returned by
    * responseToJSON
@@ -324,7 +356,7 @@ define(['./impl/logger'], function (logger) {
     _copyProperties(data, initFromData, ['headers', 'body']);
     initFromData.headers = _createHeadersFromJsonObj(data, false);
 
-    return _createResponseFromJsonObj(data, initFromData);
+    return Promise.resolve(_createResponseFromJsonObj(data, initFromData));
   };
 
   function _createResponseFromJsonObj(data, initFromData) {
@@ -343,7 +375,7 @@ define(['./impl/logger'], function (logger) {
       response = new Response(null, initFromData);
     }
 
-    return Promise.resolve(response);
+    return response;
   };
 
   /**
@@ -505,7 +537,7 @@ define(['./impl/logger'], function (logger) {
     logger.log("Offline Persistence Toolkit persistenceUtils: buildEndpointKey() for Request with url: " + request.url);
     var endPointKeyObj = {
       url: request.url,
-      id : Math.random().toString(36).replace(/[^a-z]+/g, '') // @randomNumberOk - Only used to internally keep track of request URLs
+      id : Math.random().toString(36).replace(/[^a-z]+/g, '') // @RandomNumberOK - Only used to internally keep track of request URLs
     };
     return JSON.stringify(endPointKeyObj);
   };
@@ -574,13 +606,16 @@ define(['./impl/logger'], function (logger) {
     return {keys: unmappedIdArray, data: unmappedDataArray};
   };
 
-  function _mapFindQuery(findQuery, dataMapping) {
+  function _mapFindQuery(findQuery, dataMapping, sortingInput) {
     if (findQuery  && dataMapping) {
       var filterCriterion = _transformFindQuerySelectorToFilterCriterion(findQuery.selector);
 
       if (filterCriterion) {
         findQuery.selector = _transformFilterCriterionToFindQuerySelector(dataMapping.mapFilterCriterion(filterCriterion));
       }
+    }
+    if(sortingInput && sortingInput.length) {
+      findQuery.sort = sortingInput;
     }
     return findQuery;
   };
@@ -626,7 +661,7 @@ define(['./impl/logger'], function (logger) {
         });
       } else {
         findQuery['value.' + filterCriterion.attribute] = {};
-        findQuery['value.' + filterCriterion.attribute][filterCriterion.op] = filterCriterion.value; 
+        findQuery['value.' + filterCriterion.attribute][filterCriterion.op] = filterCriterion.value;
       }
       return findQuery;
     }
@@ -650,7 +685,9 @@ define(['./impl/logger'], function (logger) {
     _derivePayloadType: _derivePayloadType,
     _mapData: _mapData,
     _unmapData: _unmapData,
-    _mapFindQuery: _mapFindQuery
+    _mapFindQuery: _mapFindQuery,
+    isReplayRequest: isReplayRequest,
+    markReplayRequest: markReplayRequest
   };
 });
 
