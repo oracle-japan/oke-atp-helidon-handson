@@ -53,4 +53,4 @@ spec:
       volumes:
       - name: handson
         secret:
-          name: okeatp
+          secretName: okeatp
