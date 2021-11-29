@@ -52,5 +52,5 @@ spec:
           mountPath: /db-demo/creds              
       volumes:
       - name: handson
-        configMap:
+        secret:
           name: okeatp
