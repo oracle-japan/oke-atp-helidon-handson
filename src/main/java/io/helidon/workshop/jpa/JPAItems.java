@@ -1,7 +1,8 @@
 package io.helidon.workshop.jpa;
-import javax.persistence.*;
 import java.io.Serializable;
 import java.util.Date;
+
+import jakarta.persistence.*;
 
 @Access(value = AccessType.FIELD)
 @Entity(name = "JPAItems")
