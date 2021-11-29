@@ -36,9 +36,9 @@ FROM openjdk:11-jre-slim
 WORKDIR /helidon
 
 # Copy the binary built in the 1st stage
-COPY --from=build /helidon/target/oke-atp-helidon.jar ./
+COPY --from=build /helidon/target/oke-atp-handson.jar ./
 COPY --from=build /helidon/target/libs ./libs
 
-CMD ["java", "-jar", "oke-atp-helidon.jar"]
+CMD ["java", "-jar", "oke-atp-handson.jar"]
 
 EXPOSE 8080
