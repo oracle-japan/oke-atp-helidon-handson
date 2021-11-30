@@ -37,12 +37,12 @@ spec:
         ports:
         - containerPort: 8080
         env:
-        - name: javax.sql.DataSource.workshopDataSource.dataSource.user
+        - name: javax.sql.DataSource.test.dataSource.user
           valueFrom:
             secretKeyRef:
               name: customized-db-cred
               key: user_name
-        - name: javax.sql.DataSource.workshopDataSource.dataSource.password
+        - name: javax.sql.DataSource.test.dataSource.password
           valueFrom:
             secretKeyRef:
               name: customized-db-cred
