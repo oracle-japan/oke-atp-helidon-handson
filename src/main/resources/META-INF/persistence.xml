@@ -8,13 +8,17 @@
     <jta-data-source>test</jta-data-source>
     <class>com.oracle.oke.workshop.Items</class>
     <properties>
-      <property name="eclipselink.deploy-on-startup" value="true"/>
+      <!-- <property name="eclipselink.deploy-on-startup" value="true"/>
       <property name="eclipselink.jdbc.native-sql" value="true"/>
       <property name="eclipselink.logging.logger" value="JavaLogger"/>
       <property name="eclipselink.logging.parameters" value="true"/>
       <property name="eclipselink.target-database" value="Oracle"/> 
       <property name="eclipselink.target-server" value="io.helidon.integrations.cdi.eclipselink.CDISEPlatform"/>
-      <property name="eclipselink.weaving" value="false"/>
+      <property name="eclipselink.weaving" value="false"/> -->
+      <property name="hibernate.dialect" value="org.hibernate.dialect.OracleDialect"/>
+      <property name="hibernate.hbm2ddl.auto" value="none"/>
+      <property name="hibernate.temp.use_jdbc_metadata_defaults" value="false"/>
+      <property name="show_sql" value="true"/>
     </properties>
   </persistence-unit>
 </persistence>
