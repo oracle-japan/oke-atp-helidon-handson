@@ -1,0 +1,24 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: AutonomousDatabases
+metadata:
+  name: oke-atp-handson-db
+spec:
+  compartmentId: <ご自身のコンパートメントOCID>
+  displayName: oke-atp-handson-db
+  dbName: okeatp
+  dbWorkload: OLTP
+  isDedicated: false
+  dbVersion: 19c
+  dataStorageSizeInTBs: 1
+  cpuCoreCount: 1
+  adminPassword:
+    secret:
+      secretName: admin-passwd
+  isAutoScalingEnabled: true
+  isFreeTier: false
+  licenseModel: LICENSE_INCLUDED
+  wallet:
+    walletName: okeatp
+    walletPassword:
+      secret:
+        secretName: wallet-passwd

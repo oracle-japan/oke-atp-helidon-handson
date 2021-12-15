@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: oke-atp-helidon
+  namespace: default
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: oke-atp-helidon
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: oke-atp-helidon
+spec:
+  selector:
+    matchLabels:
+      app: oke-atp-helidon
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: oke-atp-helidon
+        version: v1
+    spec:
+      # The credential files in the secret are base64 encoded twice and hence they need to be decoded for the programs to use them.
+      # This decode-creds initContainer takes care of decoding the files and writing them to a shared volume from which db-app container
+      # can read them and use it for connecting to ATP.
+      containers:
+      - name: oke-atp-helidon
+        image: iad.ocir.io/orasejapan/handson:${BUILDRUN_HASH}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: javax.sql.DataSource.test.dataSource.user
+          valueFrom:
+            secretKeyRef:
+              name: customized-db-cred
+              key: user_name
+        - name: javax.sql.DataSource.test.dataSource.password
+          valueFrom:
+            secretKeyRef:
+              name: customized-db-cred
+              key: password
+        volumeMounts:
+        - name: handson
+          mountPath: /db-demo/creds              
+      volumes:
+      - name: handson
+        secret:
+          secretName: okeatp

@@ -63,10 +63,13 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
      * <li>options.jsonProcessor An object containing the JSON shredder, unshredder, and queryHandler for the responses.</li>
      * <li>options.jsonProcessor.shredder JSON shredder for the responses</li>
      * <li>options.jsonProcessor.unshredder JSON unshredder for the responses</li>
-     * <li>options.queryHandler query parameter handler. Should be a function which takes a
+     * <li>options.queryHandler query parameter handler. Should be a function object which takes a
      *                          Request and returns a Promise which resolves with a Response
      *                          when the query parameters have been processed. If the Request
-     *                          was not handled then resolve to null.</li>
+     *                          was not handled then resolve to null. The queryHandler object
+     *                          also contains an optional function named normalizeQueryParameter
+     *                          that takes a request URL and returns the normalized query parameters
+     *                          as defined in {@link NormalizedQuery}</li>
      * <li>options.fetchStrategy Should be a function which takes a
      *                   Request and returns a Promise which resolves to a Response
      *                   If unspecified then uses the default.</li>
@@ -135,6 +138,7 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
         cacheHandler.registerEndpointOptions(endpointKey, self._options);
         var requestHandler = _getRequestHandler(self, request);
         var localVars = {};
+        localVars.isReplayRequest = persistenceUtils.isReplayRequest(request);
         var requestClone = request.clone();
         logger.log("Offline Persistence Toolkit DefaultResponseProxy: Calling requestHandler for request with enpointKey: " + endpointKey);
         requestHandler.call(self, request).then(function (response) {
@@ -160,19 +164,26 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
             return null;
           }
         }).then(function (undoRedoDataArray) {
-          return _insertSyncManagerRequest(request, undoRedoDataArray, localVars.isCachedResponse && !persistenceManager.isOnline());
+          if (!localVars.isReplayRequest) {
+            return _insertSyncManagerRequest(request, undoRedoDataArray, localVars.isCachedResponse && !persistenceManager.isOnline());
+          }
         }).then(function () {
           cacheHandler.unregisterEndpointOptions(endpointKey);
           resolve(localVars.response);
         }).catch(function (err) {
           logger.log("Offline Persistence Toolkit DefaultResponseProxy: Insert Response in syncManager after error for request with enpointKey: " + endpointKey);
-          _insertSyncManagerRequest(requestClone, null, true).then(function() {
+          if (!localVars.isReplayRequest) {
+            _insertSyncManagerRequest(requestClone, null, true).then(function() {
+              cacheHandler.unregisterEndpointOptions(endpointKey);
+              reject(err);
+            }, function() {
+              cacheHandler.unregisterEndpointOptions(endpointKey);
+              reject(err);
+            });
+          } else {
             cacheHandler.unregisterEndpointOptions(endpointKey);
             reject(err);
-          }, function() {
-            cacheHandler.unregisterEndpointOptions(endpointKey);
-            reject(err);
-          });
+          }
         });
       });
     };
@@ -182,7 +193,9 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
       var options = self._options;
       var requestHandler = null;
 
-      if (request.method === 'POST') {
+      if (persistenceUtils.isReplayRequest(request)) {
+        requestHandler = self.handleSyncReplay;
+      } else if (request.method === 'POST') {
         requestHandler = options['requestHandlerOverride']['handlePost'];
       } else if (request.method === 'GET') {
         requestHandler = options['requestHandlerOverride']['handleGet'];
@@ -224,6 +237,24 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
       } else {
         return persistenceManager.browserFetch(request);
       }
+    };
+
+    /**
+     * The request handler to handle request initiated from sync operation.
+     * It directs the request handling to browser fetch.
+     * @method
+     * @name handleSyncReplay
+     * @param {Request} request Request object
+     * @return {Promise} Returns a Promise which resolves to a Response object
+     * @private
+     * @instance
+     * @memberof! DefaultResponseProxy
+     */
+    DefaultResponseProxy.prototype.handleSyncReplay = function (request) {
+      logger.log("Offline Persistence Toolkit DefaultResponseProxy: Processing Request from Sync Replay");
+      // remove the custom header before sending the request out.
+      persistenceUtils.markReplayRequest(request, false);
+      return persistenceManager.browserFetch(request);
     };
 
     /**
@@ -338,7 +369,7 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
 
         if (ifMatch || ifNoneMatch) {
           logger.log("Offline Persistence Toolkit DefaultResponseProxy: Generating ETag for offline Response for default PUT Handler");
-          var randomInt = Math.floor(Math.random() * 1000000); // @randomNumberOk - Only used to generate ETag while offline
+          var randomInt = Math.floor(Math.random() * 1000000); // @RandomNumberOK - Only used to generate ETag while offline
           requestData.headers['etag'] = (Date.now() + randomInt).toString();
           requestData.headers['x-oracle-jscpt-etag-generated'] = requestData.headers['etag'];
           delete requestData.headers['if-match'];
@@ -553,7 +584,7 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
       }
       return null;
     };
-      
+
     function _getUndoRedoDataForShreddedDataItem(request, storename, shreddedDataItem) {
       var undoRedoArray = [];
       var key;
@@ -564,6 +595,11 @@ define(['./persistenceManager', './persistenceUtils', './fetchStrategies',
         if (i < dataArray.length &&
           request.method !== 'GET' &&
           request.method !== 'HEAD') {
+          // when deleting a row offline then coming online to sync
+          // it obtains a 'document deleted' doc which does not contain a key
+          if (!dataArray[i]['key']){
+            return undoRedoData(++i, dataArray);
+          }
           key = dataArray[i]['key'].toString();
 
           if (request.method !== 'DELETE') {

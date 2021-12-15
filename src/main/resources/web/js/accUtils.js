@@ -1,32 +1,34 @@
 /**
  * @license
- * Copyright (c) 2014, 2019, Oracle and/or its affiliates.
- * The Universal Permissive License (UPL), Version 1.0
+ * Copyright (c) 2014, 2021, Oracle and/or its affiliates.
+ * Licensed under The Universal Permissive License (UPL), Version 1.0
+ * as shown at https://oss.oracle.com/licenses/upl/
  * @ignore
  */
 /**
  * @license
  * Copyright (c) 2014, 2018, Oracle and/or its affiliates.
- * The Universal Permissive License (UPL), Version 1.0
+ * Licensed under The Universal Permissive License (UPL), Version 1.0
+ * as shown at https://oss.oracle.com/licenses/upl/
  */
 /*
  * Your application specific code will go here
  */
 define([],
   function () {
-    /** 
+    /**
      * Method for sending notifications to the aria-live region for Accessibility.
      * Sending a notice when the page is loaded, as well as changing the page title
      * is considered best practice for making Single Page Applications Accessbible.
      */
-    var validAriaLiveValues = ['off', 'polite', 'assertive'];
-    self.announce = function (message, manner) {
-      
+    const validAriaLiveValues = ['off', 'polite', 'assertive'];
+    announce = function (message, manner) {
+
       if (manner == undefined || !validAriaLiveValues.includes(manner)) {
         manner = 'polite';
       }
 
-      var params = {
+      let params = {
         'bubbles': true,
         'detail': { 'message': message, 'manner': manner }
       };
