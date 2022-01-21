@@ -15,7 +15,7 @@ spec:
     secret:
       secretName: admin-passwd
   isAutoScalingEnabled: true
-  isFreeTier: false
+  isFreeTier: true
   licenseModel: LICENSE_INCLUDED
   wallet:
     walletName: okeatp
