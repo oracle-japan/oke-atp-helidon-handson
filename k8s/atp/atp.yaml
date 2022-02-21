@@ -14,7 +14,7 @@ spec:
   adminPassword:
     secret:
       secretName: admin-passwd
-  isAutoScalingEnabled: true
+  isAutoScalingEnabled: false
   isFreeTier: true
   licenseModel: LICENSE_INCLUDED
   wallet:
