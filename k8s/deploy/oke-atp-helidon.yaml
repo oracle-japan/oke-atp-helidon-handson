@@ -3,6 +3,10 @@ kind: Service
 metadata:
   name: oke-atp-helidon
   namespace: default
+  annotations:
+    service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: 10
+    service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: 10
 spec:
   type: LoadBalancer
   ports:
