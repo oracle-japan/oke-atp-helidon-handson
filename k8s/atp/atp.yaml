@@ -3,18 +3,20 @@ kind: AutonomousDatabase
 metadata:
   name: oke-atp-handson-db
 spec:
+  action: Create
   details:
-    compartmentOCID: <ご自身のコンパートメントOCID>
+    compartmentId: ocid1.tenancy.oc1..aaaaaaaaf7srpqhw4gczc3p5eqwa76xced3dwm7fppw5f6regxxumqcsrmoq
     dbName: okeatp
     displayName: oke-atp-handson-db
-    cpuCoreCount: 1
+    computeModel: ECPU
+    computeCount: 2.0
     licenseModel: LICENSE_INCLUDED
-    wallet:
-      name: okeatp
-      password:
-        k8sSecret:
-          name: wallet-passwd
     adminPassword:
       k8sSecret:
         name: admin-passwd
     dataStorageSizeInTBs: 1
+  wallet:
+    name: okeatp
+    password:
+      k8sSecret:
+        name: wallet-passwd
