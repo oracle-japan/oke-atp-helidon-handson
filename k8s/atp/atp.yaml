@@ -5,7 +5,7 @@ metadata:
 spec:
   action: Create
   details:
-    compartmentId: ocid1.tenancy.oc1..aaaaaaaaf7srpqhw4gczc3p5eqwa76xced3dwm7fppw5f6regxxumqcsrmoq
+    compartmentId: <自身のコンパートメントOCID>
     dbName: okeatp
     displayName: oke-atp-handson-db
     computeModel: ECPU
